@@ -76,7 +76,7 @@ class SomfyRTS:
                 if self._verbose:
                     print("sleeping {0} seconds between commands".format(sleep_time))
                 self._lock.release()
-                self._closed.wait(sleep_time)
+                self._closed.wait(timeout=sleep_time)
                 self._lock.acquire()
             else:
                 cmd = self._command_queue.pop(0)
@@ -112,11 +112,10 @@ class SomfyRTS:
         cmd = "{0}{1}\r" if self._version == 1 else "01{1:02}{0}"
         cmd = cmd.format(command, channel)
 
-        self._lock.acquire()
-        self._command_queue.append(cmd)
-        self._queue_is_empty.clear()
-        self._check_queue.set()
-        self._lock.release()
+        with self._lock:
+            self._command_queue.append(cmd)
+            self._queue_is_empty.clear()
+            self._check_queue.set()
 
         if self._thread is None:
             self._process_command_queue()
@@ -146,11 +145,10 @@ class SomfyRTS:
         """discard any pending commands.  this method does nothing objects created with 'thread=False'."""
         assert not self._closed.isSet()
         if self._thread is not None:
-            self._lock.acquire()
-            self._check_queue.clear()
-            self._queue_is_empty.set()
-            self._command_queue = []
-            self._lock.release()
+            with self._lock:
+                self._check_queue.clear()
+                self._queue_is_empty.set()
+                self._command_queue = []
 
     def flush_command_queue(self, timeout=None):
         """Process any pending commands. returns True and does nothing for objects created with 'thread=False'.
@@ -163,12 +161,11 @@ class SomfyRTS:
         """Closes the associated serial port and shuts down worker thread"""
         assert not self._closed.isSet()
 
-        self._lock.acquire()
-        self._command_queue = None
-        self._queue_is_empty.set()
-        self._closed.set()
-        self._check_queue.set()
-        self._lock.release()
+        with self._lock:
+            self._command_queue = None
+            self._queue_is_empty.set()
+            self._closed.set()
+            self._check_queue.set()
 
         if self._thread is not None:
             self._thread.join()
