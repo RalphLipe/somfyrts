@@ -13,8 +13,10 @@ import argparse
 import datetime
 import threading
 import time
-
 import serial
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 TEST_PORT_NAME = 'TEST'
@@ -23,17 +25,15 @@ TEST_PORT_NAME = 'TEST'
 class SomfyRTS:
     """Sends commands via RS232 serial interface to a Somfy Universal RTS Interface device"""
 
-    def __init__(self, port, verbose=False, interval=1.5, version=1, thread=False):
+    def __init__(self, port, interval=1.5, version=1, thread=False):
         """Opens the specified port and initializes the RTS interface object.
 
         Keyword arguments:
         port -- url for serial port to open
-        verbose -- if True then output commands to the console (default is False)
         version -- either 1 or 2 depending on model of Universal RTS Interface
         thread -- if True then up(), down(), and stop() return immediately and will be processed asynchronously"""
 
         self._last_command_time = datetime.datetime.min
-        self._verbose = verbose
         self._interval_timedelta = datetime.timedelta(seconds=interval)
         self._version = version
 
@@ -73,15 +73,13 @@ class SomfyRTS:
             time_since_last_cmd = (datetime.datetime.now() - self._last_command_time)
             sleep_time = (self._interval_timedelta - time_since_last_cmd).total_seconds()
             if sleep_time > 0.0:
-                if self._verbose:
-                    print("sleeping {0} seconds between commands".format(sleep_time))
+                logger.info("sleeping {0} seconds between commands".format(sleep_time))
                 self._lock.release()
                 self._closed.wait(timeout=sleep_time)
                 self._lock.acquire()
             else:
                 cmd = self._command_queue.pop(0)
-                if self._verbose:
-                    print("sending command: {0}".format(cmd))
+                logger.info("sending command: {0}".format(cmd))
                 self._ser.write(bytes(cmd, "utf-8"))
                 self._last_command_time = datetime.datetime.now()
         self._queue_is_empty.set()
@@ -142,13 +140,12 @@ class SomfyRTS:
         self._do_command("S", channels)
 
     def clear_command_queue(self):
-        """discard any pending commands.  this method does nothing objects created with 'thread=False'."""
+        """Discard any pending commands."""
         assert not self._closed.isSet()
-        if self._thread is not None:
-            with self._lock:
-                self._check_queue.clear()
-                self._queue_is_empty.set()
-                self._command_queue = []
+        with self._lock:
+            # No need to clear _check_command_queue since process loop will clear it for us.  Avoid potential race
+            self._command_queue = []
+            self._queue_is_empty.set()
 
     def flush_command_queue(self, timeout=None):
         """Process any pending commands. returns True and does nothing for objects created with 'thread=False'.
@@ -162,9 +159,9 @@ class SomfyRTS:
         assert not self._closed.isSet()
 
         with self._lock:
-            self._command_queue = None
-            self._queue_is_empty.set()
             self._closed.set()
+            self._command_queue = []
+            self._queue_is_empty.set()
             self._check_queue.set()
 
         if self._thread is not None:
@@ -191,6 +188,7 @@ class SerialStub:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.description = "Send up, down, and stop commands to specified channels through Somfy Universal RTS Interface"
+    parser.usage = "somfyrts.py <port> [options]"
     parser.add_argument('-up', type=int, nargs='+', metavar="#",
                         help="send up command to channel #")
     parser.add_argument('-down', type=int, nargs='+', metavar="#",
@@ -210,12 +208,14 @@ if __name__ == "__main__":
     parser.epilog = "Valid channel numbers are 1 through 5 for a version one controller and 1 through 16 for version II"
     args = parser.parse_args()
 
+    if args.verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
     if args.pause:
-        if args.verbose:
-            print("pausing {0} seconds before sending first command".format(args.interval))
+        logger.info("pausing {0} seconds before sending first command".format(args.interval))
         time.sleep(args.interval)
 
-    with SomfyRTS(args.port, verbose=args.verbose, interval=args.interval, version=args.cmdver) as rts:
+    with SomfyRTS(args.port, interval=args.interval, version=args.cmdver) as rts:
         rts.stop(args.stop)
         rts.up(args.up)
         rts.down(args.down)
