@@ -15,10 +15,26 @@ import threading
 import time
 import serial
 
-from .serialstub import SerialStub
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+class SerialStub:
+    TEST_PORT_NAME = "TEST"
+
+    def __init__(self):
+        self.output = []
+        self.is_open = True
+
+    def write(self, data):
+        if self.is_open:
+            self.output.append(data)
+        else:
+            raise serial.SerialException("SerialStub closed when write method called")
+
+    def close(self):
+        self.is_open = False
 
 
 class SomfyRTS:
