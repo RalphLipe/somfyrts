@@ -15,11 +15,10 @@ import threading
 import time
 import serial
 
+from .serialstub import SerialStub
+
 import logging
 logger = logging.getLogger(__name__)
-
-
-TEST_PORT_NAME = 'TEST'
 
 
 class SomfyRTS:
@@ -38,7 +37,7 @@ class SomfyRTS:
         self._version = version
 
         # For testing purposes, the special value 'TEST' will cause the class to use the SerialStub class.
-        self._ser = SerialStub() if port == TEST_PORT_NAME else serial.Serial(port)
+        self._ser = SerialStub() if port == SerialStub.TEST_PORT_NAME else serial.Serial(port)
 
         self._lock = threading.Lock()
         self._command_queue = []
@@ -168,21 +167,6 @@ class SomfyRTS:
             self._thread.join()
 
         self._ser.close()
-
-
-class SerialStub:
-    def __init__(self):
-        self.output = []
-        self.is_open = True
-
-    def write(self, data):
-        if self.is_open:
-            self.output.append(data)
-        else:
-            raise serial.SerialException("SerialStub closed when write method called")
-
-    def close(self):
-        self.is_open = False
 
 
 if __name__ == "__main__":
