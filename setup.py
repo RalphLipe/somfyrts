@@ -32,5 +32,4 @@ setup(
                 ],
     platforms='any',
     requires=['pyserial'],
-    scripts=['somfyrts/somfyrts.py'],
 )
